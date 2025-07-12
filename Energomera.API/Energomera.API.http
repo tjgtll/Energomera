@@ -1,0 +1,6 @@
+@Energomera.API_HostAddress = http://localhost:5258
+
+GET {{Energomera.API_HostAddress}}/fields/
+Accept: application/json
+
+###
