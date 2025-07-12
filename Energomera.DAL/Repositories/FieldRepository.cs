@@ -19,10 +19,9 @@ public class FieldRepository : IFieldRepository
         var placemarks = kmlFile.Root.Flatten().OfType<Placemark>();
         var centroids = LoadCentroids();
         
-        return placemarks
-            .Where(p => p.Geometry is Polygon)
-            .Select(p => MapToDto(p, (Polygon)p.Geometry, centroids))
-            .ToList();
+        return placemarks.Where(p => p.Geometry is Polygon)
+                         .Select(p => MapToDto(p, (Polygon)p.Geometry, centroids))
+                         .ToList();
     }
 
     public FieldDto? GetById(int id) => GetAll().FirstOrDefault(f => f.Id == id);
@@ -39,9 +38,8 @@ public class FieldRepository : IFieldRepository
             foreach (var placemark in placemarks)
             {
                 var data = placemark.ExtendedData?.SchemaData?.FirstOrDefault().SimpleData;
-                placemark.Id = data.FirstOrDefault(d => d.Name == "fid").Text;
                 if (placemark.Geometry is SharpKml.Dom.Point point &&
-                    int.TryParse(placemark.Id, out var id))
+                    int.TryParse(data.FirstOrDefault(d => d.Name == "fid").Text, out var id))
                 {
                     centroids[id] = new Coordinate(point.Coordinate.Longitude, point.Coordinate.Latitude);
                 }
@@ -50,35 +48,34 @@ public class FieldRepository : IFieldRepository
         return centroids;
     }
 
-    private FieldDto MapToDto(Placemark placemark, SharpKml.Dom.Polygon kmlPolygon, Dictionary<int, Coordinate> centroids)
+    private FieldDto MapToDto(Placemark placemark, Polygon kmlPolygon, Dictionary<int, Coordinate> centroids)
     {
-        var name = placemark.Name;
-        var data = placemark.ExtendedData?.SchemaData?.FirstOrDefault().SimpleData;
-        var sizeData = data.FirstOrDefault(d => d.Name == "size");
-        var id = data.FirstOrDefault(d => d.Name == "fid").Text;
-        double.TryParse(sizeData.Text, out var size);
-        placemark.Id = id;
-        var coordinates = kmlPolygon.OuterBoundary.LinearRing.Coordinates
-            .Select(c => new[] { c.Latitude, c.Longitude })
-            .ToList();
+        var data = placemark.ExtendedData?.SchemaData?.FirstOrDefault()?.SimpleData ?? [];
 
-        int.TryParse(placemark.Id, out var fieldId);
+        var fieldId = data.FirstOrDefault(d => d.Name == "fid")?
+                          .Text is string fidText && int.TryParse(fidText, out var id)
+                          ? id
+                          : 0;
+
+        var size = data.FirstOrDefault(d => d.Name == "size")?
+                       .Text is string sizeText && double.TryParse(sizeText, out var s)
+                       ? s
+                       : 0;
+
+        var coordinates = kmlPolygon.OuterBoundary?.LinearRing?.Coordinates
+                                    .Select(c => new[] { c.Latitude, c.Longitude })
+                                    .ToList() ?? [];
+
         centroids.TryGetValue(fieldId, out var center);
-        
-        var polygon = placemark.Geometry as SharpKml.Dom.Polygon;
-
-        var coords = polygon.OuterBoundary.LinearRing.Coordinates
-            .Select(c => new[] { c.Latitude, c.Longitude })
-            .ToList();
 
         return new FieldDto
         {
             Id = fieldId,
-            Name = name,
+            Name = placemark.Name ?? string.Empty,
             Size = size,
             Locations = new LocationsDto
             {
-                Center = center != null ? new[] { center.X, center.Y } : null,
+                Center = center != null ? [center.X, center.Y] : null,
                 Polygon = coordinates
             }
         };
